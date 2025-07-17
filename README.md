@@ -17,6 +17,60 @@
 *   **File Skipping:** Respect your `.gitignore` and `.dockerignore` files, and define custom skip patterns for even more control. 
 *   **Word Limit Control:** Automatically chunks output files based on a configurable word limit to ensure manageable file sizes.
 
+## Chunk Structure (Output Schema)
+
+Each chunk is a dictionary with a type-specific structure. Here are the main chunk types:
+
+### Python Files
+- **Function chunk:**
+  ```json
+  {
+    "type": "function",
+    "name": "function_name",
+    "code": "def function_name(...):\n    ..."
+  }
+  ```
+- **Class chunk:**
+  ```json
+  {
+    "type": "class",
+    "name": "ClassName",
+    "methods": [{"name": "method1"}, ...],
+    "code": "class ClassName(...):\n    ..."
+  }
+  ```
+- **Comments chunk:**
+  ```json
+  {
+    "type": "comments",
+    "comments": [
+      {"type": "comment", "line": 10, "text": "This is a comment"},
+      {"type": "comment", "line": 20, "text": "Another comment"}
+    ]
+  }
+  ```
+
+### Markdown Files
+- **Markdown chunk:**
+  ```json
+  {
+    "header": "# Section Title",
+    "content": "Section content here..."
+  }
+  ```
+
+### Other Files
+- **File chunk:**
+  ```json
+  {
+    "type": "file",
+    "name": "filename.ext",
+    "content": "Full file content as string"
+  }
+  ```
+
+> **Note:** Only the comments chunk uses a `comments` field (list of dicts). All other chunk types use `content` (string) or `code` (string).
+
 ## Getting Started
 
 ### Installation

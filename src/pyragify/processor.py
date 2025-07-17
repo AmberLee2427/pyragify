@@ -191,26 +191,7 @@ class FileProcessor:
     def chunk_python_file(self, file_path: Path) -> list:
         """
         Chunk a Python file into semantic sections, including code, functions, and comments.
-
-        Parameters
-        ----------
-        file_path : pathlib.Path
-            The path to the Python file to be chunked.
-
-        Returns
-        -------
-        list of dict
-            A list of dictionaries where each dictionary represents a chunk with metadata and content.
-
-        Notes
-        -----
-        The chunks include functions, classes, and inline comments. Each chunk contains the following keys:
-        - 'type': The type of the chunk (e.g., 'function', 'class', 'comments').
-        - 'name': The name of the function or class (if applicable).
-        - 'docstring': The docstring associated with the function or class.
-        - 'code': The actual code of the function or class.
         """
-
         chunks = []
         try:
             with open(file_path, "r", encoding="utf-8") as f:
@@ -259,7 +240,7 @@ class FileProcessor:
                         "text": comment_text
                     })
             if comments:
-                chunks.append({"type": "comments", "content": comments})
+                chunks.append({"type": "comments", "comments": comments})
 
         except Exception as e:
             logger.warning(f"Error chunking Python file {file_path}: {e}")
@@ -486,16 +467,17 @@ class RepoContentProcessor:
     def save_chunk(self, chunk: dict, subdir: Path):
         """
         Save a chunk of content to a text file.
-
-        Parameters
-        ----------
-        chunk : dict
-            The chunk of content to save.
-        subdir : pathlib.Path
-            The subdirectory where the chunk should be saved.
         """
-        chunk_content = chunk.get("content", "")
-        chunk_word_count = len(chunk_content.split())
+        chunk_type = chunk.get("type", "unknown")
+        if chunk_type == "comments":
+            # Count words in all comment texts
+            chunk_word_count = sum(len(c["text"].split()) for c in chunk.get("comments", []))
+        elif chunk_type == "function" or chunk_type == "class":
+            chunk_word_count = len(chunk.get("code", "").split())
+        elif chunk_type == "file" or chunk_type == "markdown":
+            chunk_word_count = len(chunk.get("content", "").split())
+        else:
+            chunk_word_count = 0
         if self.current_word_count + chunk_word_count > self.max_words:
             self.save_content(subdir)
         self.content += self.format_chunk(chunk) + "\n\n"
@@ -547,16 +529,6 @@ class RepoContentProcessor:
     def format_chunk(self, chunk: dict) -> str:
         """
         Format a chunk into plain text for saving.
-
-        Parameters
-        ----------
-        chunk : dict
-            The chunk of content to format.
-
-        Returns
-        -------
-        str
-            A formatted plain-text representation of the chunk.
         """
         chunk_type = chunk.get("type", "unknown")
         if chunk_type == "function":
@@ -564,10 +536,12 @@ class RepoContentProcessor:
         elif chunk_type == "class":
             return f"Class: {chunk.get('name')}\nCode:\n{chunk.get('code')}"
         elif chunk_type == "comments":
-            comments = "\n".join(f"Line {c['line']}: {c['text']}" for c in chunk.get("content", []))
+            comments = "\n".join(f"Line {c['line']}: {c['text']}" for c in chunk.get("comments", []))
             return f"Comments:\n{comments}"
         elif chunk_type == "file":
             return f"File: {chunk.get('name')}\nContent:\n{chunk.get('content', '')}"
+        elif chunk_type == "markdown":
+            return f"Header: {chunk.get('header', '')}\nContent:\n{chunk.get('content', '')}"
         else:
             return f"Unknown chunk type:\n{chunk}"
 
@@ -576,34 +550,7 @@ class RepoContentProcessor:
     def process_file(self, file_path: Path):
         """
         Process a single file.
-
-        This method handles the processing of a single file by checking its hash for changes, chunking its content, and saving the resulting chunks.
-        Metadata about the processed file is updated, and any errors are logged.
-
-        Parameters
-        ----------
-        file_path : pathlib.Path
-            The path to the file to be processed.
-
-        Notes
-        -----
-        - Files that have unchanged hashes (compared to the cached hashes) are skipped.
-        - Skipped files are logged in the `metadata['skipped_files']` list with reasons for skipping.
-        - Processed files are chunked based on their type, and each chunk is saved to the appropriate subdirectory.
-        - Metadata about processed files, such as the number of chunks, file size, number of lines, and total words, is recorded.
-
-        Raises
-        ------
-        Exception
-            Any errors encountered during file processing are logged and added to the skipped files list, but do not halt execution.
-
-        Examples
-        --------
-        To process a file:
-            >>> processor = RepoContentProcessor(repo_path=Path("repo"), output_dir=Path("output"))
-            >>> processor.process_file(Path("repo/example.py"))
         """
-
         try:
             current_hash = compute_file_hash(file_path)
             if not current_hash:
@@ -622,15 +569,26 @@ class RepoContentProcessor:
             for chunk in chunks:
                 self.save_chunk(chunk, subdir)
 
+            def chunk_word_count(chunk):
+                chunk_type = chunk.get("type", "unknown")
+                if chunk_type == "comments":
+                    return sum(len(c["text"].split()) for c in chunk.get("comments", []))
+                elif chunk_type == "function" or chunk_type == "class":
+                    return len(chunk.get("code", "").split())
+                elif chunk_type == "file" or chunk_type == "markdown":
+                    return len(chunk.get("content", "").split())
+                else:
+                    return 0
+
             self.metadata["processed_files"].append({
                 "path": relative_path,
                 "chunks": len(chunks),
                 "size": file_path.stat().st_size,
                 "lines": sum(1 for _ in open(file_path, encoding="utf-8")),
-                "words": sum(len(chunk["content"].split()) for chunk in chunks if "content" in chunk)
+                "words": sum(chunk_word_count(chunk) for chunk in chunks)
             })
             self.metadata["summary"]["total_files_processed"] += 1
-            self.metadata["summary"]["total_words"] += sum(len(chunk["content"].split()) for chunk in chunks if "content" in chunk)
+            self.metadata["summary"]["total_words"] += sum(chunk_word_count(chunk) for chunk in chunks)
             self.hashes[relative_path] = current_hash
         except Exception as e:
             logger.warning(f"Error processing file {file_path}: {e}")
