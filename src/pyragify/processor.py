@@ -372,13 +372,14 @@ class RepoContentProcessor:
         Determine the output subdirectory for a file based on its type.
     """
 
-    def __init__(self, repo_path: Path, output_dir: Path, max_words: int = 200000, max_file_size: int = 10 * 1024 * 1024, skip_patterns: list = None, skip_dirs: list = None):
+    def __init__(self, repo_path: Path, output_dir: Path, max_words: int = 200000, max_file_size: int = 10 * 1024 * 1024, skip_patterns: list = None, skip_dirs: list = None, split_on_files: bool = False):
         self.repo_path = repo_path.resolve()
         self.output_dir = output_dir.resolve()
         self.max_words = max_words
         self.max_file_size = max_file_size
         self.skip_patterns = skip_patterns or [".git"]
         self.skip_dirs = skip_dirs or ["node_modules", "__pycache__"]
+        self.split_on_files = split_on_files
         self.ignore_patterns = self.load_ignore_patterns()
         self.current_word_count = 0
         self.content = ""
@@ -390,7 +391,6 @@ class RepoContentProcessor:
             "summary": {"total_files_processed": 0, "total_words": 0}
         }
         self.file_processor = FileProcessor(self.repo_path, self.output_dir)
-
         validate_directory(self.output_dir)
 
     def load_ignore_patterns(self) -> pathspec.PathSpec:
@@ -478,10 +478,18 @@ class RepoContentProcessor:
             chunk_word_count = len(chunk.get("content", "").split())
         else:
             chunk_word_count = 0
-        if self.current_word_count + chunk_word_count > self.max_words:
+        if self.split_on_files:
+            # Always flush before writing a new file's chunk
+            if self.content:
+                self.save_content(subdir)
+            self.content = self.format_chunk(chunk) + "\n\n"
+            self.current_word_count = chunk_word_count
             self.save_content(subdir)
-        self.content += self.format_chunk(chunk) + "\n\n"
-        self.current_word_count += chunk_word_count
+        else:
+            if self.current_word_count + chunk_word_count > self.max_words:
+                self.save_content(subdir)
+            self.content += self.format_chunk(chunk) + "\n\n"
+            self.current_word_count += chunk_word_count
 
 
     def save_content(self, subdir: Path):

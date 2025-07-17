@@ -7,4 +7,5 @@ skip_patterns:
  - "uv.lock"
  - ".gitignore"
 skip_dirs: []
+split_on_files: false  # If true, each file is output as a separate chunk
 verbose: false

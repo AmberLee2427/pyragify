@@ -16,6 +16,7 @@
 *   **Flexible Configuration:** Tailor the processing through a YAML file or command-line arguments to fit your specific needs. 
 *   **File Skipping:** Respect your `.gitignore` and `.dockerignore` files, and define custom skip patterns for even more control. 
 *   **Word Limit Control:** Automatically chunks output files based on a configurable word limit to ensure manageable file sizes.
+*   **File-Based Chunking (Optional):** Set `split_on_files: true` in your config to output each file as a separate chunk (recommended for LLM/embedding workflows with strict token limits).
 
 ## Chunk Structure (Output Schema)
 
@@ -111,6 +112,7 @@ See `python -m pyragify.cli --help` for a full list of options.
 *   `--max-file-size`: Override the maximum file size (in bytes) to process. 
 *   `--skip-patterns`: Override file patterns to skip. 
 *   `--skip-dirs`: Override directories to skip.
+*   `--split-on-files`: If true, output each file as a separate chunk (default: false).
 *   `--verbose`: Enable detailed logging for debugging. 
 
 ### Configuration (config.yaml)
@@ -126,6 +128,7 @@ skip_patterns:
 skip_dirs:
  - "__pycache__"
  - "node_modules"
+split_on_files: false  # If true, each file is output as a separate chunk
 verbose: false
 ```
 
@@ -158,6 +161,7 @@ The processed content is saved as `.txt` files and categorized into subdirectori
 
 *   **Respect for Ignore Files:** pyragify automatically honors `.gitignore` and `.dockerignore` patterns. 
 *   **Incremental Processing:** MD5 hashes are used to efficiently skip unchanged files during subsequent runs. 
+*   **Configurable Chunking:** Use `split_on_files: true` to output each file as a separate chunk (recommended for LLM/embedding workflows with strict token limits). Default is false (semantic chunking with word limit).
 
 ## Contributing
 
@@ -193,6 +197,7 @@ uv run python -m pyragify.cli process-repo \
  --max-file-size 5242880 \
  --skip-patterns "*.log,*.tmp" \
  --skip-dirs "__pycache__,node_modules" \
+ --split-on-files true \
  --verbose 
 ```
 

@@ -23,6 +23,7 @@ def process_repo(
     max_file_size: int = typer.Option(None, help="Override: Maximum file size to process (in bytes)."),
     skip_patterns: list[str] = typer.Option(None, help="Override: List of file patterns to skip."),
     skip_dirs: list[str] = typer.Option(None, help="Override: List of directories to skip."),
+    split_on_files: bool = typer.Option(None, help="If true, output each file as a separate chunk (default: false)."),
     verbose: bool = typer.Option(None, help="Override: Enable verbose output.")
 ):
     """
@@ -47,6 +48,8 @@ def process_repo(
         Override for the list of file patterns to skip (e.g., "*.log", "*.tmp"). Defaults to the value in the configuration file.
     skip_dirs : list of str, optional
         Override for the list of directory names to skip (e.g., "node_modules", "__pycache__"). Defaults to the value in the configuration file.
+    split_on_files : bool, optional
+        If true, output each file as a separate chunk. Defaults to the value in the configuration file or false if not set.
     verbose : bool, optional
         Override for enabling verbose output. When enabled, the logging level is set to DEBUG. Defaults to the value in the configuration file.
 
@@ -85,6 +88,7 @@ def process_repo(
         "max_file_size": max_file_size,
         "skip_patterns": skip_patterns,
         "skip_dirs": skip_dirs,
+        "split_on_files": split_on_files,
         "verbose": verbose,
     }
     for key, value in overrides.items():
@@ -103,7 +107,8 @@ def process_repo(
             max_words=config.max_words,
             max_file_size=config.max_file_size,
             skip_patterns=config.skip_patterns,
-            skip_dirs=config.skip_dirs
+            skip_dirs=config.skip_dirs,
+            split_on_files=getattr(config, "split_on_files", False)
         )
         processor.process_repo()
         logger.info("Repository processing completed successfully!")
