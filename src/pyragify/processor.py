@@ -4,6 +4,7 @@ import json
 import tokenize
 import pathspec
 import logging
+import re
 from io import StringIO
 from pathlib import Path
 from collections import defaultdict
@@ -160,6 +161,66 @@ def read_file_in_chunks(file_path: Path, chunk_size: int = 4096):
         while chunk := file.read(chunk_size):
             yield chunk
 
+def clean_html_content(content: str) -> str:
+    """
+    Clean HTML content to make it more readable in chunked output.
+    
+    Parameters
+    ----------
+    content : str
+        HTML content to clean
+        
+    Returns
+    -------
+    str
+        Cleaned content with HTML tags replaced with readable equivalents
+    """
+    if not content:
+        return content
+    
+    # Replace common HTML elements with readable equivalents
+    cleaned = content
+    
+    # Handle images
+    cleaned = re.sub(r'<img[^>]*src="([^"]*)"[^>]*alt="([^"]*)"[^>]*>', r'[Image: \2 (\1)]', cleaned)
+    cleaned = re.sub(r'<img[^>]*src="([^"]*)"[^>]*>', r'[Image: \1]', cleaned)
+    
+    # Handle links
+    cleaned = re.sub(r'<a[^>]*href="([^"]*)"[^>]*>(.*?)</a>', r'[\2](\1)', cleaned)
+    
+    # Handle basic formatting
+    cleaned = re.sub(r'<strong>(.*?)</strong>', r'**\1**', cleaned)
+    cleaned = re.sub(r'<b>(.*?)</b>', r'**\1**', cleaned)
+    cleaned = re.sub(r'<em>(.*?)</em>', r'*\1*', cleaned)
+    cleaned = re.sub(r'<i>(.*?)</i>', r'*\1*', cleaned)
+    
+    # Handle headers
+    cleaned = re.sub(r'<h1[^>]*>(.*?)</h1>', r'# \1', cleaned)
+    cleaned = re.sub(r'<h2[^>]*>(.*?)</h2>', r'## \1', cleaned)
+    cleaned = re.sub(r'<h3[^>]*>(.*?)</h3>', r'### \1', cleaned)
+    cleaned = re.sub(r'<h4[^>]*>(.*?)</h4>', r'#### \1', cleaned)
+    cleaned = re.sub(r'<h5[^>]*>(.*?)</h5>', r'##### \1', cleaned)
+    cleaned = re.sub(r'<h6[^>]*>(.*?)</h6>', r'###### \1', cleaned)
+    
+    # Handle paragraphs and divs
+    cleaned = re.sub(r'<p[^>]*>(.*?)</p>', r'\1\n\n', cleaned, flags=re.DOTALL)
+    cleaned = re.sub(r'<div[^>]*>(.*?)</div>', r'\1\n', cleaned, flags=re.DOTALL)
+    
+    # Handle line breaks
+    cleaned = re.sub(r'<br[^>]*>', r'\n', cleaned)
+    
+    # Handle horizontal rules
+    cleaned = re.sub(r'<hr[^>]*>', r'---\n', cleaned)
+    
+    # Remove any remaining HTML tags
+    cleaned = re.sub(r'<[^>]+>', '', cleaned)
+    
+    # Clean up extra whitespace
+    cleaned = re.sub(r'\n\s*\n\s*\n', r'\n\n', cleaned)
+    cleaned = cleaned.strip()
+    
+    return cleaned
+
 class FileProcessor:
     """
     Class for handling file processing logic.
@@ -263,6 +324,7 @@ class FileProcessor:
         Notes
         -----
         Each chunk contains the following keys:
+        - 'type': Always 'markdown'
         - 'header': The header text (e.g., '# Title').
         - 'content': The content under the header.
         """
@@ -272,15 +334,19 @@ class FileProcessor:
             with open(file_path, "r", encoding="utf-8") as f:
                 lines = f.readlines()
     
-            current_chunk = {"header": None, "content": ""}
+            current_chunk = {"type": "markdown", "header": None, "content": ""}
             for line in lines:
                 if line.startswith("#"):  # Header
                     if current_chunk["header"] or current_chunk["content"]:
+                        # Clean HTML content before adding chunk
+                        current_chunk["content"] = clean_html_content(current_chunk["content"])
                         chunks.append(current_chunk)
-                    current_chunk = {"header": line.strip(), "content": ""}
+                    current_chunk = {"type": "markdown", "header": line.strip(), "content": ""}
                 else:
                     current_chunk["content"] += line
             if current_chunk["header"] or current_chunk["content"]:
+                # Clean HTML content for the last chunk
+                current_chunk["content"] = clean_html_content(current_chunk["content"])
                 chunks.append(current_chunk)
         except Exception as e:
             logger.warning(f"Error chunking Markdown file {file_path}: {e}")
@@ -383,6 +449,7 @@ class RepoContentProcessor:
         self.ignore_patterns = self.load_ignore_patterns()
         self.current_word_count = 0
         self.content = ""
+        self.current_file_path = None  # Track current file being processed
         self.hashes = load_json(self.output_dir / "hashes.json", "hashes")
         self.file_counter = defaultdict(int)
         self.metadata = {
@@ -464,7 +531,7 @@ class RepoContentProcessor:
 
         return False
 
-    def save_chunk(self, chunk: dict, subdir: Path):
+    def save_chunk(self, chunk: dict, subdir: Path, file_path: Path = None):
         """
         Save a chunk of content to a text file.
         """
@@ -478,13 +545,26 @@ class RepoContentProcessor:
             chunk_word_count = len(chunk.get("content", "").split())
         else:
             chunk_word_count = 0
+        
         if self.split_on_files:
-            # Always flush before writing a new file's chunk
-            if self.content:
-                self.save_content(subdir)
-            self.content = self.format_chunk(chunk) + "\n\n"
-            self.current_word_count = chunk_word_count
-            self.save_content(subdir)
+            # Check if we're starting a new file
+            if file_path != self.current_file_path:
+                # Save previous file's content if any
+                if self.content:
+                    self.save_content(subdir)
+                # Start new file
+                self.current_file_path = file_path
+                self.content = ""
+                self.current_word_count = 0
+                # Add file header
+                if file_path:
+                    relative_path = file_path.relative_to(self.repo_path)
+                    repo_name = self.repo_path.name
+                    self.content += f"Repository: {repo_name}\nFile Path: {relative_path}\n{'='*50}\n\n"
+            
+            # Accumulate chunks for the current file
+            self.content += self.format_chunk(chunk) + "\n\n"
+            self.current_word_count += chunk_word_count
         else:
             if self.current_word_count + chunk_word_count > self.max_words:
                 self.save_content(subdir)
@@ -575,7 +655,7 @@ class RepoContentProcessor:
             subdir = self.get_file_type_subdir(file_path)
             chunks = self.file_processor.chunk_file(file_path)
             for chunk in chunks:
-                self.save_chunk(chunk, subdir)
+                self.save_chunk(chunk, subdir, file_path)
 
             def chunk_word_count(chunk):
                 chunk_type = chunk.get("type", "unknown")
@@ -670,7 +750,7 @@ class RepoContentProcessor:
             if is_documentation_file(file_path):
                 chunks = self.file_processor.chunk_markdown_file(file_path)
                 for chunk in chunks:
-                    self.save_chunk(chunk, Path("markdown"))
+                    self.save_chunk(chunk, Path("markdown"), file_path)
             elif file_path.suffix == ".py":
                 self.process_file(file_path)
             elif file_path.is_file():

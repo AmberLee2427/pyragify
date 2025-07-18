@@ -2,10 +2,13 @@ repo_path: /home/user/project/pyragify/
 output_dir: ./output
 max_words: 200000
 max_file_size: 10485760  # 10 MB
+skip_dirs: 
+- __pycache__
+- node_modules
 skip_patterns:
- - ".git"
- - "uv.lock"
- - ".gitignore"
-skip_dirs: []
+- .git
+- .github
+- uv.lock
+- .gitignore
 split_on_files: false  # If true, each file is output as a separate chunk
 verbose: false
